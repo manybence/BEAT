@@ -127,6 +127,9 @@ def raw_to_mmHg(raw):
     sensitivity = 0.1761
     return sensitivity * raw.astype(float)
 
+def s16(value):
+    return -(value & 0x8000) | (value & 0x7FFF)
+
 def extract_battery(series):
     '''
     Convert raw AD-value to battery %.
@@ -187,9 +190,36 @@ def convert_data(df):
     df["BattRaw"] = (df["BattRaw"] * 100) / 4095
     df["BattFast"] = (df["BattFast"] * 100) / 4095
     df["BattSlow"] = (df["BattSlow"] * 100) / 4095
-                                                     
+    
+    df["VrefintRaw"] = (df["VrefintRaw"] * 30) / 4095
+    df["VrefintFast"] = (df["VrefintFast"] * 30) / 4095
+    df["VrefintSlow"] = (df["VrefintSlow"] * 30) / 4095
+                                     
+    df["MotorPos"] = df["MotorPos"] / 1000              
     df["State"] = df["State"] * 10
     
+    df["Inflate"] = df['Buttons'].apply(lambda x: (int(x) & 0x03) * 10)
+    df["Deflate"] = df['Buttons'].apply(lambda x: ((int(x) & 0x0C) >> 2) * 10)
+    df["Alarm Ack"] = df['Buttons'].apply(lambda x: ((int(x) & 0x30) >> 4) * 10)
+    
+    df["TgtSpeed"] = df["TgtSpeed"] / 100
+    df["CurSpeed"] = df["CurSpeed"] / 100
+    
+    df["BVPoints"] = df["BVDebug"].apply(lambda x: (int(x) >> 24) * 10)
+    df["BVState"] = df["BVDebug"].apply(lambda x: ((int(x) >> 16) & 0x0F) * 10)
+    df["BVFlags"] = df["BVDebug"].apply(lambda x: (int(x) & 0x0F) * 10 - 150)
+    # df["Balloon period"] =   PlotGraphOptional(lambda samples: self.upd_time(samples[14], samples[15], samples[0])
+    
+    df["PW pos"] = df["PumpWheel"].apply(lambda x: (s16(int(x) >> 16)) / 1000) 
+    df["PW State"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 4) & 0x0F) * 10)
+    df["PW Illegal"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 8) & 0x00FF) * 10)
+    df["PW HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 2) & 0x01) * 10 - 32)
+    df["PW HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 3) & 0x01) * 10 - 33)
+    df["GPIO HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 0) & 0x01) * 10 - 20)
+    df["GPIO HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 1) & 0x01) * 10 - 21)                         
+    
+
+    # Decode variable names
     df.rename(columns={'Raw0': 'Tip, raw',
                        'Fast0': 'Tip, fast',
                        'Slow0': 'Tip, slow',
@@ -197,6 +227,12 @@ def convert_data(df):
                        'Fast1': 'Balloon, fast',
                        'Slow1': 'Balloon, slow'
                        }, inplace=True)
+    
+    
+    # Drop unused variables
+    df.drop(['PumpWheel', 'Buttons', 'BVDebug', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR'], 
+            axis=1, inplace=True)
+    #TODO: Comments, alarms
     
     return df
 
