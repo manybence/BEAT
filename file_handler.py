@@ -11,7 +11,6 @@ import pandas as pd
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
 import os
-import gzip
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
@@ -19,7 +18,7 @@ fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded
 
 def read_raw_data(file_path):
         
-    rows = []
+    datalines = []
     header = []
     sections = []
     
@@ -27,29 +26,32 @@ def read_raw_data(file_path):
     with open(file_path, 'r') as file:
         for line in file:
             
-            # Extract data lines
+            # Extract data lines that start with "Data:"
             if line.startswith("Data:"):
                 row = line.replace("Data:", "").split(";")
                 
-                # New section
+                # New section starts with header ("Data: Index, Raw0, ...")
+                # If "Index" is not numerical then it's a header line, which indicates the start of a new section
                 if not str.isdigit(row[0]): 
                     
-                    # Header line
+                    # If no header has been read yet, read the header line
                     if not header:
                         header = row
                         
-                    # Start of new data section
+                    # If header is already read, close the current section
                     else:
-                        df = pd.DataFrame(rows[1:], columns=header)
+                        df = pd.DataFrame(datalines, columns=header)
                         df = df.set_index('Index')
                         sections.append(df)
-                        rows = []
+                        datalines = []
+                        
+                # If "Index" is numerical then append data to current section
                 else:
-                    rows.append(row)    
+                    datalines.append(row)    
         
-        # Append last section
-        if rows:
-            df = pd.DataFrame(rows[1:], columns=header)
+        # Close the last section
+        if datalines:
+            df = pd.DataFrame(datalines, columns=header)
             df = df.set_index('Index')
             sections.append(df)
     
@@ -114,10 +116,10 @@ def convert_data(df):
     # Remove unused variables
     df.drop(['Comment', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR'], 
             axis=1, inplace=True)
-    
-    # Convert data to numerical type (or NaN)
+            
+    # Convert data to numerical type, discard corrupted data rows
     df = df.apply(pd.to_numeric, errors='coerce')
-    df = df.interpolate(method='linear')  # Linear interpolation
+    df.dropna(inplace=True, axis=0)  
     
     df = df.rename_axis("Time")
     df.index = df.index / fs_index
@@ -130,39 +132,39 @@ def convert_data(df):
     df["Fast1"] = raw_to_mmHg(df["Fast1"])
     df["Slow1"] = raw_to_mmHg(df["Slow1"])
     
-    df["Systolic"] = df["Systolic"] / 10
-    df["Diastolic"] = df["Diastolic"] / 10
-    df["BPDiff"] = df["BPDiff"] / 10
-    df["SlowBPDiff"] = df["SlowBPDiff"] / 10
+    df["Systolic"] = df["Systolic"].astype(float) / 10
+    df["Diastolic"] = df["Diastolic"].astype(float) / 10
+    df["BPDiff"] = df["BPDiff"].astype(float) / 10
+    df["SlowBPDiff"] = df["SlowBPDiff"].astype(float) / 10
     
     df["Pulse BPM"] = pulse_bpm(df)
     df["BPStable"] = df["BPStable"].astype(float)
     
-    df["BalloonHigh"] = df["BalloonHigh"] / 10
+    df["BalloonHigh"] = df["BalloonHigh"].astype(float) / 10
     df["BalloonLow"] =  df["BalloonLow"].astype(float) / 10
-    df["BalloonDiff"] = df["BalloonDiff"] / 10
+    df["BalloonDiff"] = df["BalloonDiff"].astype(float) / 10
     
-    df["AirTemp"] = df["AirTemp"] / 10
-    df["AirPres"] = df["AirPres"] / 10 - 750
-    df["SubjTemp"] = df["SubjTemp"] / 10
+    df["AirTemp"] = df["AirTemp"].astype(float) / 10
+    df["AirPres"] = df["AirPres"].astype(float) / 10 - 750
+    df["SubjTemp"] = df["SubjTemp"].astype(float) / 10
     
-    df["BattRaw"] = (df["BattRaw"] * 100) / 4095
-    df["BattFast"] = (df["BattFast"] * 100) / 4095
-    df["BattSlow"] = (df["BattSlow"] * 100) / 4095
+    df["BattRaw"] = (df["BattRaw"].astype(float) * 100) / 4095
+    df["BattFast"] = (df["BattFast"].astype(float) * 100) / 4095
+    df["BattSlow"] = (df["BattSlow"].astype(float) * 100) / 4095
     
-    df["VrefintRaw"] = (df["VrefintRaw"] * 30) / 4095
-    df["VrefintFast"] = (df["VrefintFast"] * 30) / 4095
-    df["VrefintSlow"] = (df["VrefintSlow"] * 30) / 4095
+    df["VrefintRaw"] = (df["VrefintRaw"].astype(float) * 30) / 4095
+    df["VrefintFast"] = (df["VrefintFast"].astype(float) * 30) / 4095
+    df["VrefintSlow"] = (df["VrefintSlow"].astype(float) * 30) / 4095
                                      
-    df["MotorPos"] = df["MotorPos"] / 1000              
-    df["State"] = df["State"] * 10
+    df["MotorPos"] = df["MotorPos"].astype(float) / 1000              
+    df["State"] = df["State"].astype(float) * 10
     
     df["Inflate"] = df['Buttons'].apply(lambda x: (int(x) & 0x03) * 10)
     df["Deflate"] = df['Buttons'].apply(lambda x: ((int(x) & 0x0C) >> 2) * 10)
     df["Alarm Ack"] = df['Buttons'].apply(lambda x: ((int(x) & 0x30) >> 4) * 10)
     
-    df["TgtSpeed"] = df["TgtSpeed"] / 100
-    df["CurSpeed"] = df["CurSpeed"] / 100
+    df["TgtSpeed"] = df["TgtSpeed"].astype(float) / 100
+    df["CurSpeed"] = df["CurSpeed"].astype(float) / 100
     
     df["BVPoints"] = df["BVDebug"].apply(lambda x: (int(x) >> 24) * 10)
     df["BVState"] = df["BVDebug"].apply(lambda x: ((int(x) >> 16) & 0x0F) * 10)

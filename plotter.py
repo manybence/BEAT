@@ -211,14 +211,9 @@ file_path = fh.find_file()
 start_time = time.time()
 
 df = fh.read_preproc_data(file_path)
-# df = pd.concat(sections, ignore_index=True)
-# df = fh.convert_data(df)
-# print("Number of sections detected: ", len(sections))
 
 elapsed_time = time.time() - start_time
-print(f"Elapsed time: {elapsed_time} seconds")
-
-
+print(f"Elapsed time: {round(elapsed_time, 2)} seconds")
 
 
 #-----------------------------------------------------------------------------------
@@ -322,7 +317,7 @@ def select_stat(selected_stat, zoom_range):
     
 if __name__ == "__main__":
     webbrowser.open("http://127.0.0.1:8050/")
-    app.run_server(debug=True, use_reloader=False)
+    app.run_server(debug=True, threaded=False, use_reloader=False)
 
 
 
