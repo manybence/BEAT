@@ -206,14 +206,13 @@ app = dash.Dash(__name__, external_stylesheets=[dbc.themes.MORPH], title="BEAT")
 
 #------------------------------------------------------------------------------------
 # Import and clean data
-file_path = fh.find_file()
 
+# file_path = fh.find_file()
+file_path = fh.open_datafile()
 start_time = time.time()
-
-df = fh.read_preproc_data(file_path)
-
+df = fh.read_preproc_data(file_path) 
 elapsed_time = time.time() - start_time
-print(f"Elapsed time: {round(elapsed_time, 2)} seconds")
+print(f"Data reading time: {round(elapsed_time, 2)} seconds")
 
 
 #-----------------------------------------------------------------------------------

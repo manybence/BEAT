@@ -8,7 +8,7 @@ BEAT - Preprocessing the data files
 """
 
 import pandas as pd
-from tkinter import Tk
+from tkinter import Tk, messagebox
 from tkinter.filedialog import askopenfilename
 import os
 
@@ -207,21 +207,51 @@ def find_file():
         file_path = askopenfilename(
             title='Select data file', 
             parent=root, 
-            filetypes=[("Text files", "*.txt"), 
-                      ("CSV files", "*.csv"), 
-                      ("ZIP files", "*.zip"),
+            filetypes=[("Text files", "*.txt"),
+                      ("Preprocessed files", "*.gz"),
                       ("All files", "*.*")])
         print("File selected: ", file_path)
         root.destroy()  # Destroy the root window when folder selected.
         return file_path
+    
     except FileNotFoundError():
         print("File not found")
         return None
     
-def preprocess_file(export=False):
+def open_datafile():
+    
+    # Prompt user for data file
+    file_path = find_file()
+    file_dir, file_name = os.path.split(file_path)
+    file_base, file_ext = os.path.splitext(file_name)
+    
+    # The user picked a .txt file
+    if file_ext == '.txt':
+        
+        # Look for a preprocessed file with the same name
+        gz_file_path = os.path.join(file_dir, f"{file_base}_PREPROC.gz")
+        
+        if os.path.exists(gz_file_path):
+            print("A preprocessed version is found and will be opened.")
+        else:
+            print("Preprocessing the selected file...")
+            gz_file_path = preprocess_file(file_path, export=True)
+            
+        return gz_file_path
+    
+    elif file_ext == '.gz':
+        print("Opening the preprocessed file...")
+        return file_path
+    
+    else:
+        print("ERROR: Unsupported file type.")
+        return None
+    
+    
+def preprocess_file(file_path=None, export=False):
     
     # Import and clean data
-    file_path = find_file()
+    if not file_path: file_path = find_file()
     sections = read_raw_data(file_path)
 
     print("Number of sections detected: ", len(sections))
@@ -246,8 +276,11 @@ def preprocess_file(export=False):
             compression="gzip"
         )
         
-        print("Preprocessed file exported successfully")
+        print("Preprocessed file exported successfully.")
+        return file_path_preproc
     
 if __name__ == "__main__":
     
-    preprocess_file(export=True)
+    # preprocess_file(export=True)
+    df = open_datafile()
+    print(df[:2])
