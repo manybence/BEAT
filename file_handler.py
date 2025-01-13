@@ -11,6 +11,7 @@ import pandas as pd
 from tkinter import Tk, messagebox
 from tkinter.filedialog import askopenfilename
 import os
+import re
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
@@ -69,12 +70,11 @@ def read_preproc_data(file_path):
 
     return pd.concat(chunk_list)
 
-def raw_to_mmHg(raw):
+def raw_to_mmHg(raw, sensitivity=0.149924):
     '''
     Convert raw AD-value to mmHg.
     '''
     try:
-        sensitivity = 0.1761
         return sensitivity * raw.astype(float)
     except:
         return 0
@@ -108,13 +108,36 @@ def pulse_bpm(df):
         if (float(row['BPDiff']) >= 1.2 and float(row['BPUpdate']) > 0) 
         else 0.0, axis=1)
 
-def convert_data(df):
+def extract_sensitivity(column):
     
+    # Extract sensitivity values
+    bsn = None
+    tsn = None
+    for row in column:
+        if not bsn: 
+            try:
+                bsn = float(re.search(r"BSN:[+-]?[\d\.]+", row).group()[4:])  # Regex to match "BSN: <float>"
+            except: pass
+        if not tsn:
+            try:
+                tsn = float(re.search(r"TSN:[+-]?[\d\.]+", row).group()[4:])  # Regex to match "TSN: <float>"
+            except: pass
+        if bsn and tsn:
+            break
+        
+    print(f"BSN: {bsn}, TSN: {tsn}")
+    return bsn, tsn
+    
+def convert_data(df):
+        
     # Remove whitespace characters
     df.columns = df.columns.str.strip()
     
+    # Extract sensitivity values
+    bsn, tsn = extract_sensitivity(df["Comment"])
+    
     # Remove unused variables
-    df.drop(['Comment', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR'], 
+    df.drop(['Comment', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR', 'Raw0', 'Raw1', 'BattRaw', 'VrefintRaw'], 
             axis=1, inplace=True)
             
     # Convert data to numerical type, discard corrupted data rows
@@ -124,18 +147,18 @@ def convert_data(df):
     df = df.rename_axis("Time")
     df.index = df.index / fs_index
     
-    df["Raw0"] = raw_to_mmHg(df["Raw0"])
-    df["Fast0"] = raw_to_mmHg(df["Fast0"])
-    df["Slow0"] = raw_to_mmHg(df["Slow0"])
+    df["Fast0"] = raw_to_mmHg(df["Fast0"], sensitivity=tsn)
+    df["Slow0"] = raw_to_mmHg(df["Slow0"], sensitivity=tsn)
     
-    df["Raw1"] = raw_to_mmHg(df["Raw1"])
-    df["Fast1"] = raw_to_mmHg(df["Fast1"])
-    df["Slow1"] = raw_to_mmHg(df["Slow1"])
+    df["Fast1"] = raw_to_mmHg(df["Fast1"], sensitivity=bsn)
+    df["Slow1"] = raw_to_mmHg(df["Slow1"], sensitivity=bsn)
     
     df["Systolic"] = df["Systolic"].astype(float) / 10
     df["Diastolic"] = df["Diastolic"].astype(float) / 10
     df["BPDiff"] = df["BPDiff"].astype(float) / 10
     df["SlowBPDiff"] = df["SlowBPDiff"].astype(float) / 10
+    
+    df["MAP"] = (df["Systolic"] + 2 * df["Diastolic"]) / 3.0
     
     df["Pulse BPM"] = pulse_bpm(df)
     df["BPStable"] = df["BPStable"].astype(float)
@@ -148,11 +171,9 @@ def convert_data(df):
     df["AirPres"] = df["AirPres"].astype(float) / 10 - 750
     df["SubjTemp"] = df["SubjTemp"].astype(float) / 10
     
-    df["BattRaw"] = (df["BattRaw"].astype(float) * 100) / 4095
     df["BattFast"] = (df["BattFast"].astype(float) * 100) / 4095
     df["BattSlow"] = (df["BattSlow"].astype(float) * 100) / 4095
     
-    df["VrefintRaw"] = (df["VrefintRaw"].astype(float) * 30) / 4095
     df["VrefintFast"] = (df["VrefintFast"].astype(float) * 30) / 4095
     df["VrefintSlow"] = (df["VrefintSlow"].astype(float) * 30) / 4095
                                      
@@ -181,10 +202,8 @@ def convert_data(df):
     
 
     # Decode variable names
-    df.rename(columns={'Raw0': 'Tip, raw',
-                       'Fast0': 'Tip, fast',
+    df.rename(columns={'Fast0': 'Tip, fast',
                        'Slow0': 'Tip, slow',
-                       'Raw1': 'Balloon, raw',
                        'Fast1': 'Balloon, fast',
                        'Slow1': 'Balloon, slow'
                        }, inplace=True)

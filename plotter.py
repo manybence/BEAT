@@ -8,9 +8,6 @@ BEAT visualization app
 """
 
 import plotly.graph_objects as go
-import pandas as pd
-from tkinter import Tk
-from tkinter.filedialog import askopenfilename
 import os
 import dash
 from dash import dcc, html
@@ -19,9 +16,23 @@ import webbrowser
 import dash_bootstrap_components as dbc
 import file_handler as fh
 import time
+import signal
+import psutil
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
+sw_version = "2025_01_13__1"
+
+plot_config = {'displayModeBar': True, 'displaylogo': False,'queueLength': 1}
+
+def release_port(port):
+    for proc in psutil.process_iter(['pid', 'name', 'connections']):
+        connections = proc.info.get('connections', [])
+        if connections:  # Only proceed if there are connections to check
+            for conn in connections:
+                if conn.laddr.port == port:
+                    proc.terminate()  # Terminate the process holding the port
+                    return
 
 def highlight_area(figure, X0, X1, color="darkred", label="", shape_id="highlighted_area", visibility=True):
     
@@ -57,19 +68,24 @@ def highlight_area(figure, X0, X1, color="darkred", label="", shape_id="highligh
     
 def display_figure(dataframe):
     
-    default_items = ["Systolic", "Battery", "Inflate", "Inline comments", "Catheter", "Balloon, raw", "State"]
+    default_items = ["Systolic", "Battery", "Inflate", "Catheter", "Balloon, slow", "State"]
+    
+    color_mapping = {
+        "State": "black"
+    }
+    
     fig = go.Figure()
     
     for column in df.columns:
-        if column in default_items: visibility = True
-        else: visibility = False
+        visibility = True if column in default_items else False
         fig.add_trace(
             go.Scatter(
                 x=df.index, 
                 y=df[column], 
                 name=column, 
                 mode="lines", 
-                visible=visibility if visibility else "legendonly"
+                visible=visibility if visibility else "legendonly",
+                line=dict(color=color_mapping.get(column))
         ))
     
     fig.update_layout(
@@ -78,8 +94,10 @@ def display_figure(dataframe):
         xaxis_title="Time (s)",
         yaxis_title="Pressure (mmHg)",
         legend_title="Variables",
+        uirevision='dynamic',  # Preserve zoom state across updates
         hovermode="x unified",  # Show all values at the same x position on hover
-        paper_bgcolor=bg_colour
+        hoverdistance=15,       # Distance of hover label
+        paper_bgcolor=bg_colour,
     )
     
     return fig
@@ -188,13 +206,16 @@ def extract_data(zoom_range, variable):
         zoom_info = f"Zoom Range: [{round(x_min)} - {round(x_max)}] s"
       
     # Display results
-    average_pressure = round(sum(extracted_data) / len(extracted_data), 2)
-    data = f"Average pressure: {average_pressure} mmHg"
+    average_data = round(sum(extracted_data) / len(extracted_data), 2)
+    min_data = round(min(extracted_data), 2)
+    max_data = round(max(extracted_data), 2)
     
     output = html.Div([
         html.P(zoom_info),
         html.P(f"Selected variable: {variable}"),
-        html.P(data)
+        html.P(f"Average: {average_data}", style={'fontWeight': 'bold'}),
+        html.P(f"Min: {min_data}", style={'fontWeight': 'bold'}),
+        html.P(f"Max: {max_data}", style={'fontWeight': 'bold'}),        
         ])
     
     return output
@@ -224,11 +245,32 @@ app.layout = html.Div(
     
     children = [
     
-        html.H1("BEAT visualization app", style={'marginLeft': '20px'}),
+        html.Div(
+            style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "padding": "10px"},
+            children=[
+                html.H1("BEAT visualization app", style={'margin': '0'}),
+                html.Span("SW version: " + sw_version, style={'marginRight': '20px', 'fontSize': '16px', 'color': '#555'})
+            ]
+        ),
+        html.Div([
+            html.Button(
+                "Shutdown", 
+                id="shutdown-button", 
+                n_clicks=0,
+                style={
+                    "backgroundColor": "red", 
+                    "color": "white", 
+                    "padding": "10px 20px", 
+                    "border": "none", 
+                    "borderRadius": "5px", 
+                    "cursor": "pointer"
+                }
+            )
+        ], style={"display": "flex", "justifyContent": "flex-end"}),  # Flex container for right alignment
         
         # html.Button("Select data file", id='file-button', style={'marginLeft': '20px'}),
         
-        dcc.Graph(id='plot', figure=display_figure(df), style={"backgroundColor": bg_colour}),
+        dcc.Graph(id='plot', figure=display_figure(df), config=plot_config, style={"backgroundColor": bg_colour}),
         html.Button("Toggle inflation phases", id='inflation_button', style={'marginLeft': '20px'}, n_clicks=0),
         
         html.H2("Statistics", style={'marginTop': '20px', 'marginLeft': '20px'}),
@@ -238,10 +280,17 @@ app.layout = html.Div(
             options=[
                 {'label': 'Select category', 'value': 'none'},
                 {'label': 'Inflation', 'value': 'inflation'},
-                {'label': 'Pressure', 'value': 'pressure'}
+                {'label': 'Measure min, max, avg', 'value': 'measure'}
             ],
             value='none', 
             style={'width': '35%', 'marginBottom': '20px', 'marginLeft': '20px'}
+            ),
+        
+        dcc.Dropdown(
+            id='var_selector',
+            options=[{'label': column, 'value': column} for column in df.columns],
+            value='none', 
+            style={'display': 'none', 'width': '35%', 'marginBottom': '20px', 'marginLeft': '20px'}
             ),
         
         html.Div(id='stat_display', style={'marginLeft': '20px'}),
@@ -249,12 +298,40 @@ app.layout = html.Div(
         html.Div(id='event-info', style={'display': 'block', 'marginLeft': '20px'}),
         
         # Store for zoom range
-        dcc.Store(id='zoom-store', data=None)
+        dcc.Store(id='zoom-store', data=None),
+        
+        dcc.Location(id="redirect", refresh=True)  # Redirect location
     ])
 
 
 #----------------------------------------------------------------------------------
 # Connect the components
+
+
+# Callback for the shutdown button
+@app.callback(
+    Output("redirect", "href"),
+    Input("shutdown-button", "n_clicks"),
+    prevent_initial_call=True
+)
+def shutdown_server(n_clicks):
+    if n_clicks > 0:
+        # Inject a redirect to /shutdown
+        return "/shutdown"
+    return dash.no_update
+        
+        
+@app.server.route('/shutdown')
+def shutdown_page():
+    # Send signal to terminate the process
+    os.kill(os.getpid(), signal.SIGINT)
+    return """
+    <script>
+        alert("Server is shutting down. This tab will close automatically.");
+        window.close();
+    </script>
+    """
+
 
 # Callback to toggle inflation phases
 @app.callback(
@@ -291,13 +368,30 @@ def update_zoom_range(relayout_data):
     return None
 
 
-
+@app.callback(
+    Output('var_selector', 'style'),
+    [Input('stat_selector', 'value')],
+     [State('var_selector', 'style')]
+)
+def select_stat(selected_stat, current_style):
+    
+    updated_style = current_style.copy()
+    
+    # Display variable selector
+    if selected_stat == 'measure':
+        updated_style['display'] = 'block'
+        return updated_style
+    else:
+        updated_style['display'] = 'none'
+        return updated_style
+    
 @app.callback(
     Output('stat_display', 'children'),
     [Input('stat_selector', 'value'),
-     Input('zoom-store', 'data')]
+     Input('zoom-store', 'data'),
+     Input('var_selector', 'value')]
 )
-def select_stat(selected_stat, zoom_range):
+def select_var(selected_stat, zoom_range, selected_var):
     
     # Display inflation / diflation statistics
     if selected_stat == 'inflation':
@@ -305,19 +399,26 @@ def select_stat(selected_stat, zoom_range):
         return html.P(stat)
     
     # Display pressure statistics
-    elif selected_stat == 'pressure':
-        stat = extract_data(zoom_range, "Balloon, slow")
+    elif selected_stat == 'measure' and selected_var:
+        stat = extract_data(zoom_range, selected_var)
         return stat
     else:
         return html.Div([
-            html.P("Select a category to display relevant statistics."),
+            html.P("Select a variable to display relevant statistics.")
         ])
  
     
 if __name__ == "__main__":
-    webbrowser.open("http://127.0.0.1:8050/")
-    app.run_server(debug=True, threaded=False, use_reloader=False)
-
+    
+    # Shut down previous instance if exist
+    # release_port(8050)
+    
+    # Open new server
+    try:
+        webbrowser.open("http://127.0.0.1:8050/")
+        app.run_server(debug=True, threaded=False, use_reloader=False)
+    except KeyboardInterrupt:
+        print("Server stopped gracefully.")
 
 
     
