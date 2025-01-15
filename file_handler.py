@@ -12,23 +12,76 @@ from tkinter import Tk, messagebox
 from tkinter.filedialog import askopenfilename
 import os
 import re
+import csv
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
 fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded only)
+sw_version = "2025_01_15__1"
+bsn, tsn = None, None     #Balloon and Tip sensitivity values
+
+def export_metadata(metadata, filename):
+    try:
+        with open(filename, mode='w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(["Metadata"])
+            for item in metadata:
+                writer.writerow([item])
+        print(f"Metadata successfully exported to {filename}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
 
 def read_raw_data(file_path):
         
     datalines = []
     header = []
     sections = []
+    metadata = []
+    
+    catheterID = None
+    
+    # Add SW version
+    metadata.append("BEAT SW version:\t\t\t" + sw_version)
+    
+    # Define Assistant metadata markers
+    start_marker = "* * * * * * * * * NEURESCUE"
+    end_marker = "Current log level"
+    extracting = False
+    extracting_done = False
+    extracted_lines = []
     
     # Open the file and read all lines
     with open(file_path, 'r') as file:
         for line in file:
             
+            #------------------------------------ Read HW metadata ----------------------------------------------------"
+            
+            if not extracting_done:
+                
+                # Extract Assistant metadata
+                if start_marker in line:
+                    extracting = True
+                    continue
+                elif end_marker in line:
+                    extracting = False
+                    extracting_done = True
+                    for i in extracted_lines:
+                        metadata.append(i)
+                    continue
+                if extracting:
+                    extracted_lines.append(line.strip())
+                    
+            # Extract Catheter ID
+            if line.startswith("1-Wire: First connection of catheter") and not catheterID:
+                catheterID = re.search(r"1-Wire: First connection of catheter (.+)", line).group(1).strip()
+                print("Catheter ID: " + catheterID)
+                metadata.append("Catheter ID:\t\t\t\t" + catheterID)
+            
+            
+            #------------------------------------ Read data lines ----------------------------------------------------"
+            
             # Extract data lines that start with "Data:"
-            if line.startswith("Data:"):
+            elif line.startswith("Data:"):
                 row = line.replace("Data:", "").split(";")
                 
                 # New section starts with header ("Data: Index, Raw0, ...")
@@ -48,7 +101,7 @@ def read_raw_data(file_path):
                         
                 # If "Index" is numerical then append data to current section
                 else:
-                    datalines.append(row)    
+                    datalines.append(row)  
         
         # Close the last section
         if datalines:
@@ -57,12 +110,14 @@ def read_raw_data(file_path):
             sections.append(df)
     
     print("Data read successfully")
-    return sections
+    return sections, metadata
 
 def read_preproc_data(file_path):
     
     chunksize = 10000
     chunk_list = []
+    
+    # TODO: add advanced and normal column lists 
     
     # Read large data in chunks, use first column (Time) as index
     for chunk in pd.read_csv(file_path, index_col=0, compression='infer', chunksize=chunksize, delimiter=";"):
@@ -128,7 +183,8 @@ def extract_sensitivity(column):
     print(f"BSN: {bsn}, TSN: {tsn}")
     return bsn, tsn
     
-def convert_data(df):
+def convert_data(df, advanced_mode=False):
+    global bsn, tsn
         
     # Remove whitespace characters
     df.columns = df.columns.str.strip()
@@ -139,6 +195,36 @@ def convert_data(df):
     # Remove unused variables
     df.drop(['Comment', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR', 'Raw0', 'Raw1', 'BattRaw', 'VrefintRaw'], 
             axis=1, inplace=True)
+    
+    # Drop advanced variables
+    if not advanced_mode:
+        df.drop(['SlowBPDiff', 'BPStable', 'BalloonHigh', 'BalloonLow', 'BalloonDiff', 'AirTemp', 'AirPres',
+                 'SubjTemp', 'VrefintFast', 'VrefintSlow', 'TgtSpeed', 'CurSpeed'], 
+                axis=1, inplace=True)
+    # Keep advanced variables
+    else:
+        df["BPDiff"] = df["BPDiff"].astype(float) / 10
+        df["SlowBPDiff"] = df["SlowBPDiff"].astype(float) / 10
+        df["BPStable"] = df["BPStable"].astype(float)
+        df["BalloonHigh"] = df["BalloonHigh"].astype(float) / 10
+        df["BalloonLow"] =  df["BalloonLow"].astype(float) / 10
+        df["BalloonDiff"] = df["BalloonDiff"].astype(float) / 10
+        df["AirTemp"] = df["AirTemp"].astype(float) / 10
+        df["AirPres"] = df["AirPres"].astype(float) / 10 - 750
+        df["SubjTemp"] = df["SubjTemp"].astype(float) / 10
+        df["VrefintFast"] = (df["VrefintFast"].astype(float) * 30) / 4095
+        df["VrefintSlow"] = (df["VrefintSlow"].astype(float) * 30) / 4095
+        df["TgtSpeed"] = df["TgtSpeed"].astype(float) / 100
+        df["CurSpeed"] = df["CurSpeed"].astype(float) / 100
+        df["BVPoints"] = df["BVDebug"].apply(lambda x: (int(x) >> 24) * 10)
+        df["BVState"] = df["BVDebug"].apply(lambda x: ((int(x) >> 16) & 0x0F) * 10)
+        df["BVFlags"] = df["BVDebug"].apply(lambda x: (int(x) & 0x0F) * 10 - 150)
+        # df["Balloon period"] =   PlotGraphOptional(lambda samples: self.upd_time(samples[14], samples[15], samples[0])
+        df["PW pos"] = df["PumpWheel"].apply(lambda x: (s16(int(x) >> 16)) / 1000) 
+        df["PW State"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 4) & 0x0F) * 10)
+        df["PW Illegal"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 8) & 0x00FF) * 10)
+        df["GPIO HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 0) & 0x01) * 10 - 20)
+        df["GPIO HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 1) & 0x01) * 10 - 21) 
             
     # Convert data to numerical type, discard corrupted data rows
     df = df.apply(pd.to_numeric, errors='coerce')
@@ -155,50 +241,21 @@ def convert_data(df):
     
     df["Systolic"] = df["Systolic"].astype(float) / 10
     df["Diastolic"] = df["Diastolic"].astype(float) / 10
-    df["BPDiff"] = df["BPDiff"].astype(float) / 10
-    df["SlowBPDiff"] = df["SlowBPDiff"].astype(float) / 10
-    
     df["MAP"] = (df["Systolic"] + 2 * df["Diastolic"]) / 3.0
     
     df["Pulse BPM"] = pulse_bpm(df)
-    df["BPStable"] = df["BPStable"].astype(float)
     
-    df["BalloonHigh"] = df["BalloonHigh"].astype(float) / 10
-    df["BalloonLow"] =  df["BalloonLow"].astype(float) / 10
-    df["BalloonDiff"] = df["BalloonDiff"].astype(float) / 10
-    
-    df["AirTemp"] = df["AirTemp"].astype(float) / 10
-    df["AirPres"] = df["AirPres"].astype(float) / 10 - 750
-    df["SubjTemp"] = df["SubjTemp"].astype(float) / 10
-    
-    df["BattFast"] = (df["BattFast"].astype(float) * 100) / 4095
-    df["BattSlow"] = (df["BattSlow"].astype(float) * 100) / 4095
-    
-    df["VrefintFast"] = (df["VrefintFast"].astype(float) * 30) / 4095
-    df["VrefintSlow"] = (df["VrefintSlow"].astype(float) * 30) / 4095
+    df["Inflate"] = df['Buttons'].apply(lambda x: (int(x) & 0x03) * 100)
+    df["Deflate"] = df['Buttons'].apply(lambda x: ((int(x) & 0x0C) >> 2) * 100)
+    df["Alarm Ack"] = df['Buttons'].apply(lambda x: ((int(x) & 0x30) >> 4) * 100)
+    df["State"] = df["State"].astype(float) * 10
                                      
     df["MotorPos"] = df["MotorPos"].astype(float) / 1000              
-    df["State"] = df["State"].astype(float) * 10
-    
-    df["Inflate"] = df['Buttons'].apply(lambda x: (int(x) & 0x03) * 10)
-    df["Deflate"] = df['Buttons'].apply(lambda x: ((int(x) & 0x0C) >> 2) * 10)
-    df["Alarm Ack"] = df['Buttons'].apply(lambda x: ((int(x) & 0x30) >> 4) * 10)
-    
-    df["TgtSpeed"] = df["TgtSpeed"].astype(float) / 100
-    df["CurSpeed"] = df["CurSpeed"].astype(float) / 100
-    
-    df["BVPoints"] = df["BVDebug"].apply(lambda x: (int(x) >> 24) * 10)
-    df["BVState"] = df["BVDebug"].apply(lambda x: ((int(x) >> 16) & 0x0F) * 10)
-    df["BVFlags"] = df["BVDebug"].apply(lambda x: (int(x) & 0x0F) * 10 - 150)
-    # df["Balloon period"] =   PlotGraphOptional(lambda samples: self.upd_time(samples[14], samples[15], samples[0])
-    
-    df["PW pos"] = df["PumpWheel"].apply(lambda x: (s16(int(x) >> 16)) / 1000) 
-    df["PW State"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 4) & 0x0F) * 10)
-    df["PW Illegal"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 8) & 0x00FF) * 10)
     df["PW HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 2) & 0x01) * 10 - 32)
     df["PW HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 3) & 0x01) * 10 - 33)
-    df["GPIO HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 0) & 0x01) * 10 - 20)
-    df["GPIO HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 1) & 0x01) * 10 - 21)                         
+                        
+    df["BattFast"] = (df["BattFast"].astype(float) * 100) / 4095
+    df["BattSlow"] = (df["BattSlow"].astype(float) * 100) / 4095                       
     
 
     # Decode variable names
@@ -210,9 +267,12 @@ def convert_data(df):
     
     
     # Drop unused variables
-    df.drop(['PumpWheel', 'Buttons', 'BVDebug'], 
+    df.drop(['PumpWheel', 'Buttons', 'BVDebug', 'BPDiff', 'BPUpdate'], 
             axis=1, inplace=True)
     #TODO: Comments, alarms
+    
+    # Convert all columns to int
+    df = df.apply(lambda col: col.astype(int) if col.name != df.index.name else col)
     
     print("Units are converted successfully")
     return df
@@ -244,6 +304,8 @@ def open_datafile():
     file_dir, file_name = os.path.split(file_path)
     file_base, file_ext = os.path.splitext(file_name)
     
+    # TODO: add metadata SW version checking -> recreate .gz file?
+    
     # The user picked a .txt file
     if file_ext == '.txt':
         
@@ -266,24 +328,28 @@ def open_datafile():
         print("ERROR: Unsupported file type.")
         return None
     
-    
 def preprocess_file(file_path=None, export=False):
     
     # Import and clean data
     if not file_path: file_path = find_file()
-    sections = read_raw_data(file_path)
+    sections, metadata = read_raw_data(file_path)
 
     print("Number of sections detected: ", len(sections))
 
     df = pd.concat(sections, ignore_index=True)
     df = convert_data(df)
     
-    # Convert all columns to int
-    df = df.apply(lambda col: col.astype(int) if col.name != df.index.name else col)
+    metadata.append(f"BSN:\t\t\t\t\t{bsn}")
+    metadata.append(f"TSN:\t\t\t\t\t{tsn}")
     
     if export:
-        # Export preprocessed data file
         base_name, _ = os.path.splitext(file_path)
+        
+        # Export metadata to file
+        file_path_meta = f"{base_name}_metadata.csv"
+        export_metadata(metadata, file_path_meta)
+        
+        # Export preprocessed data file
         file_path_preproc = f"{base_name}_PREPROC.gz"
     
         df.to_csv(
