@@ -17,7 +17,7 @@ import csv
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
 fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded only)
-sw_version = "2025_01_15__1"
+sw_version = "2025_01_23__1"
 bsn, tsn = None, None     #Balloon and Tip sensitivity values
 
 def export_metadata(metadata, filename):
@@ -74,7 +74,6 @@ def read_raw_data(file_path):
             # Extract Catheter ID
             if line.startswith("1-Wire: First connection of catheter") and not catheterID:
                 catheterID = re.search(r"1-Wire: First connection of catheter (.+)", line).group(1).strip()
-                print("Catheter ID: " + catheterID)
                 metadata.append("Catheter ID:\t\t\t\t" + catheterID)
             
             
@@ -179,8 +178,7 @@ def extract_sensitivity(column):
             except: pass
         if bsn and tsn:
             break
-        
-    print(f"BSN: {bsn}, TSN: {tsn}")
+    
     return bsn, tsn
     
 def convert_data(df, advanced_mode=False):
@@ -289,13 +287,14 @@ def find_file():
             filetypes=[("Text files", "*.txt"),
                       ("Preprocessed files", "*.gz"),
                       ("All files", "*.*")])
-        print("File selected: ", file_path)
+        print("File selected: ", file_path, "\n")
         root.destroy()  # Destroy the root window when folder selected.
         return file_path
     
     except FileNotFoundError():
         print("File not found")
         return None
+    
     
 def open_datafile():
     
@@ -304,29 +303,55 @@ def open_datafile():
     file_dir, file_name = os.path.split(file_path)
     file_base, file_ext = os.path.splitext(file_name)
     
-    # TODO: add metadata SW version checking -> recreate .gz file?
-    
-    # The user picked a .txt file
-    if file_ext == '.txt':
+    if file_ext in ['.txt', '.csv', '.gz']:
         
-        # Look for a preprocessed file with the same name
+        # Look for preprocessed file and meta file with the same name
         gz_file_path = os.path.join(file_dir, f"{file_base}_PREPROC.gz")
+        meta_file_path = os.path.join(file_dir, f"{file_base}_metadata.csv")
         
-        if os.path.exists(gz_file_path):
-            print("A preprocessed version is found and will be opened.")
-        else:
+        # Case 1: Preprocessed file does not exist
+        if not os.path.exists(gz_file_path):
             print("Preprocessing the selected file...")
-            gz_file_path = preprocess_file(file_path, export=True)
-            
-        return gz_file_path
+            return preprocess_file(file_path, export=True)
     
-    elif file_ext == '.gz':
-        print("Opening the preprocessed file...")
-        return file_path
+        # Case 2: Metadata file does not exist
+        if not os.path.exists(meta_file_path):
+            print("The meta file is not found. A new version will be created.")
+            return preprocess_file(file_path, export=True)
+    
+        # Case 3: Metadata file exists but version is outdated
+        if not check_version(meta_file_path, expected_version=sw_version):
+            print("The preprocessed file was created with incorrect SW version. A new version will be created.")
+            return preprocess_file(file_path, export=True)
+    
+        # Case 4: All checks pass
+        print("A preprocessed file is available and will be opened.")
+        return gz_file_path
     
     else:
         print("ERROR: Unsupported file type.")
         return None
+    
+def check_version(meta_path, expected_version):
+    
+    sw_version = None
+    
+    # Read meta file for SW version
+    with open(meta_path, mode='r') as file:
+        for line in file:
+            if "BEAT SW version" in line:
+                sw_version = line.split(":")[1].strip()
+        if sw_version:
+            if expected_version == sw_version:
+                return True
+            else:
+                print("Preprocessed file is outdated.")
+                return False
+        else:
+            print("ERROR: SW version not found in the file.")
+            return False
+    
+
     
 def preprocess_file(file_path=None, export=False):
     
@@ -367,5 +392,5 @@ def preprocess_file(file_path=None, export=False):
 if __name__ == "__main__":
     
     # preprocess_file(export=True)
-    df = open_datafile()
-    print(df[:2])
+    path = open_datafile()
+    print(path)

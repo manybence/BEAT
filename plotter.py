@@ -61,7 +61,7 @@ app.layout = html.Div(
                     "cursor": "pointer"
                 }
             )
-        ], style={"display": "flex", "justifyContent": "flex-end"}),  # Flex container for right alignment
+        ], style={"display": "flex", "justifyContent": "flex-start", "padding":"10px"}),  # Flex container for right alignment
         
         # html.Button("Select data file", id='file-button', style={'marginLeft': '20px'}),
         

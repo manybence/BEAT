@@ -1,0 +1,22 @@
+Metadata
+BEAT SW version:			2025_01_23__1
+HW revision                             600100-00-2
+MCU device                              STM32F10X XL
+MCU revision                            Rev A or 1
+ARM Cortex-M3 revision                  r1p1
+MCU Flash size                          1024 Kb
+MCU serial no                           0x43223346 3235534D 05DD2D30
+MCU Frequency (in MHz)                  36.0
+LSI Frequency (in Hz)                   42960
+Compiler version                        6.3.1 20170215 (release) [ARM/embedded-6-branch revision 245512]
+Build date                              May 15 2020
+Build time                              14:54:07
+Build computer name                     MIN-WINDOWS-XPS
+Build computer username                 min
+Build type                              Clinical(GrpRelease)
+SW version                              v4.0.0
+SW SHA-1                                fc2be25b531b5dd03df7046aac0f3a5f50666b8c
+Sensor setup                            Honeywell 015PDUCV
+Catheter ID:				0x1e1a7782
+BSN:					0.294013
+TSN:					0.149924
