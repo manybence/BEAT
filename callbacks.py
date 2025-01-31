@@ -14,7 +14,7 @@ import os
 import signal
 import functions as func
 
-def register_callbacks(app, df, plot_title):
+def register_callbacks(app, df_num, df_text, plot_title):
     
     # Callback for the shutdown button
     @app.callback(
@@ -54,7 +54,7 @@ def register_callbacks(app, df, plot_title):
     )
     def update_plot(inf_clicks, alarm_clicks, ui_clicks, wire_clicks, phases, alarms, uis, wires):
             
-        fig = func.display_figure(df, plot_title)  # Default figure
+        fig = func.display_figure(df_num, plot_title)  # Default figure
     
         # Handle inflation button
         visibility_inf = bool(inf_clicks % 2)    
@@ -127,12 +127,12 @@ def register_callbacks(app, df, plot_title):
         
         # Display inflation / diflation statistics
         if selected_stat == 'inflation':
-            stat = func.measure_inflation(df)
+            stat = func.measure_inflation(df_num)
             return html.P(stat)
         
         # Display pressure statistics
         elif selected_stat == 'measure' and selected_var:
-            stat = func.extract_data(df, zoom_range, selected_var)
+            stat = func.extract_data(df_num, zoom_range, selected_var)
             return stat
         
         # Default

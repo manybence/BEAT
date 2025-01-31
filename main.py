@@ -21,7 +21,7 @@ from callbacks import register_callbacks
 
 file_path = fh.open_datafile()
 plot_title="File: " + os.path.basename(file_path)
-df = fh.read_preproc_data(file_path) 
+df_num, df_text = fh.read_preproc_data(file_path) 
 
 
 #-----------------------------------------------------------------------------------
@@ -61,21 +61,21 @@ app.layout = html.Div(
         
         # html.Button("Select data file", id='file-button', style={'marginLeft': '20px'}),
         
-        dcc.Graph(id='plot', figure=func.display_figure(df, plot_title), config=plot_config, style={"backgroundColor": func.bg_colour}),
+        dcc.Graph(id='plot', figure=func.display_figure(df_num, plot_title), config=plot_config, style={"backgroundColor": func.bg_colour}),
         html.Button("Inflation phases", id='inflation_button', style={'marginLeft': '60px'}, n_clicks=0),
         html.Button("Alarms", id='alarm_button', style={'marginLeft': '60px'}, n_clicks=0),
         html.Button("UI messages", id='ui_button', style={'marginLeft': '60px'}, n_clicks=0),
         html.Button("Catheter", id='wire_button', style={'marginLeft': '60px'}, n_clicks=0),
         
         dcc.Store(id='inf-phases-store', data={
-            "inflation": func.measure_time(df, 50, 80),
-            "deflation": func.measure_time(df, 100, 30),
-            "pause": func.measure_duration(df, 120)
+            "inflation": func.measure_time(df_num, 50, 80),
+            "deflation": func.measure_time(df_num, 100, 30),
+            "pause": func.measure_duration(df_num, 120)
         }),
         
-        dcc.Store(id='alarms-store', data=func.measure_text_duration(df, column="Alarm")),
-        dcc.Store(id='ui-store', data=func.measure_text_duration(df, column="UI")),
-        dcc.Store(id='wire-store', data=func.measure_text_duration(df, column="Wire")),
+        dcc.Store(id='alarms-store', data=func.measure_text_duration(df_text, column="Alarm")),
+        dcc.Store(id='ui-store', data=func.measure_text_duration(df_text, column="UI")),
+        dcc.Store(id='wire-store', data=func.measure_text_duration(df_text, column="Wire")),
         
         html.H2("Statistics", style={'marginTop': '20px', 'marginLeft': '60px'}),
         
@@ -92,7 +92,7 @@ app.layout = html.Div(
         
         dcc.Dropdown(
             id='var_selector',
-            options=[{'label': column, 'value': column} for column in df.columns],
+            options=[{'label': column, 'value': column} for column in df_num.columns],
             value='none', 
             style={'display': 'none', 'width': '35%', 'marginBottom': '20px', 'marginLeft': '20px'}
             ),
@@ -111,7 +111,7 @@ app.layout = html.Div(
 #----------------------------------------------------------------------------------
 # Connect the components via callbacks
 
-register_callbacks(app, df, plot_title)
+register_callbacks(app, df_num, df_text, plot_title)
 
 if __name__ == "__main__":
     

@@ -140,11 +140,16 @@ def read_preproc_data(file_path):
     
     # TODO: add advanced and normal column lists 
     
-    # Read large data in chunks, use first column (Time) as index
+    # Read large data in chunks
     for chunk in pd.read_csv(file_path, index_col=0, compression='infer', chunksize=chunksize, delimiter=";"):
         chunk_list.append(chunk)
+    df = pd.concat(chunk_list)
 
-    return pd.concat(chunk_list)
+    # Split into numerical and text-based DataFrames
+    df_numeric = df.select_dtypes(include=['number'])
+    df_text = df.select_dtypes(exclude=['number'])  # Everything else (likely text)
+    
+    return df_numeric, df_text
 
 def raw_to_mmHg(raw, sensitivity=0.149924):
     '''
@@ -214,11 +219,10 @@ def convert_data(df, advanced_mode=False):
     df.index = df.index / fs_index
     
     # Extract non-numerical values
-    bsn, tsn = extract_sensitivity(df["Comment"])
-    comments = df['Comment'][df['Comment'].notna() & (df['Comment'].str.strip() != '')]
-    alarms = df['Alarm'][df['Alarm'].notna() & (df['Alarm'].str.strip() != '')]
-    ui = df['UI'][df['UI'].notna() & (df['UI'].str.strip() != '')]
-    wire = df['Wire'][df['Wire'].notna() & (df['Wire'].str.strip() != '')]
+    text_columns = ["Comment", "Alarm", "UI", "Wire"]
+    df_text = df[text_columns].copy()
+    df_text = df_text.applymap(str.strip)
+    bsn, tsn = extract_sensitivity(df_text["Comment"])
     
     # Remove unused variables
     df.drop(['Comment', 'Alarm', 'UI', 'Wire', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR', 'Raw0', 'Raw1', 'BattRaw', 'VrefintRaw'], 
@@ -290,18 +294,8 @@ def convert_data(df, advanced_mode=False):
     # Convert all columns to int
     df = df.apply(lambda col: col.astype(int) if col.name != df.index.name else col)
     
-    # Add non-numerical columns
-    df["Comments"] = comments
-    df['Comments'] = df['Comments'].fillna(np.nan)
-    df["Alarm"] = alarms
-    df['Alarm'] = df['Alarm'].fillna(np.nan)
-    df["UI"] = ui
-    df['UI'] = df['UI'].fillna(np.nan)
-    df["Wire"] = wire
-    df['Wire'] = df['Wire'].fillna(np.nan)
-    
     print("Units are converted successfully")
-    return df
+    return df, df_text
 
 def find_file():
         
@@ -386,8 +380,10 @@ def preprocess_file(file_path=None, export=False):
 
     print("Number of sections detected: ", len(sections))
 
-    df = pd.concat(sections, ignore_index=True)
-    df = convert_data(df)
+    df_raw = pd.concat(sections, ignore_index=True)
+    df_num, df_text = convert_data(df_raw)
+    df_merged = pd.concat([df_num, df_text], axis=1)
+
     
     metadata.append(f"BSN:\t\t\t\t\t{bsn}")
     metadata.append(f"TSN:\t\t\t\t\t{tsn}")
@@ -402,7 +398,7 @@ def preprocess_file(file_path=None, export=False):
         # Export preprocessed data file
         file_path_preproc = f"{base_name}_PREPROC.gz"
     
-        df.to_csv(
+        df_merged.to_csv(
             file_path_preproc,
             index=True,
             header=True,
