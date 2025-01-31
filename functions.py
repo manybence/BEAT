@@ -52,6 +52,39 @@ def highlight_area(figure, X0, X1, color="darkred", label="", shape_id="highligh
         )
     
     return figure
+
+def show_alarms(figure, X0, X1, color="yellow", label="", shape_id="alarm_line", visibility=True):
+    
+    # Add shaded region for specific X range
+    figure.add_shape(
+        type="rect",
+        x0=X0,  # Start of the shaded region
+        x1=X1,  # End of the shaded region
+        y0=0,   # Bottom of the plot
+        y1=1,   # Top of the plot (use 'yref' to set as relative or absolute)
+        xref="x",  # Use X-axis data for bounds
+        yref="paper",  # Use relative 0-1 for Y-axis
+        fillcolor=color,  # Background color
+        opacity=0.2,  # Transparency
+        layer="below",  # Place below the data
+        name="highlighted_area",  # Add a name for identification
+        visible=visibility
+    )
+    
+    if label and visibility:
+        figure.add_annotation(
+            x=(X0+X1)/2,  # Place the text in the middle of the rectangle
+            y=400,  # Slightly below the top of the plot
+            text=label,  # Text to display
+            showarrow=False,
+            font=dict(size=14, color="black"),  # Style for the text
+            align="center",
+            bgcolor=color,  # Background color for the text
+            opacity=0.8,  # Slightly transparent text background
+            textangle=90
+        )
+    
+    return figure
     
 def display_figure(df, title):
     
@@ -72,8 +105,9 @@ def display_figure(df, title):
                 name=column, 
                 mode="lines", 
                 visible=visibility if visibility else "legendonly",
-                line=dict(color=color_mapping.get(column))
-        ))
+                line=dict(color=color_mapping.get(column)),
+            )
+        )
 
     fig.update_layout(
         height=600,
@@ -247,3 +281,45 @@ def extract_data(df, zoom_range, variable):
     
     return output
 
+def measure_text_duration(df, column="Alarm", max_gap=3):
+    """
+    Function for collecting the non-numerical variables (such as Alarms, Comments, UI messages, etc.) into sections.
+    The motivation is that usually the same message appears repeatedly over a period of time, 
+    representing a state, rather than a one-time message.
+    """
+    alarms = []
+    active_alarm = None
+    start_idx = None
+    prev_idx = None  # Track previous index
+
+    for i, value in df[column].dropna().items():
+        
+        # Close previous section if the gap is too large
+        if active_alarm and (i - prev_idx) > max_gap:
+            alarms.append({"alarm": active_alarm, "start": start_idx, "end": prev_idx})
+            active_alarm = None
+            start_idx = prev_idx = None
+            
+        # New alarm
+        if value.strip():
+            
+            # Start new section
+            if not active_alarm:
+                active_alarm = value
+                start_idx = prev_idx = i
+            
+            # Expand section
+            elif active_alarm and active_alarm == value:
+                prev_idx = i
+                
+            # Close section, start a new one
+            elif active_alarm != value:
+                alarms.append({"alarm": active_alarm, "start": start_idx, "end": prev_idx})
+                active_alarm = value
+                start_idx = prev_idx = i
+
+    # If the last alarm continued until the end
+    if active_alarm:
+        alarms.append({"alarm": active_alarm, "start": start_idx, "end": prev_idx})
+
+    return alarms

@@ -12,7 +12,6 @@ import dash
 from dash import dcc, html
 import webbrowser
 import dash_bootstrap_components as dbc
-import time
 import file_handler as fh
 import functions as func
 from callbacks import register_callbacks
@@ -21,11 +20,8 @@ from callbacks import register_callbacks
 # Import and clean the data file
 
 file_path = fh.open_datafile()
-plot_title="BEAT data - " + os.path.basename(file_path)
-start_time = time.time()
+plot_title="File: " + os.path.basename(file_path)
 df = fh.read_preproc_data(file_path) 
-elapsed_time = time.time() - start_time
-print(f"Data reading time: {round(elapsed_time, 2)} seconds")
 
 
 #-----------------------------------------------------------------------------------
@@ -43,7 +39,7 @@ app.layout = html.Div(
         html.Div(
             style={"display": "flex", "justifyContent": "space-between", "alignItems": "center", "padding": "10px"},
             children=[
-                html.H1("BEAT visualization tool", style={'margin': '0'}),
+                html.H1("BEAT visualization tool", style={'marginLeft': '60px'}),
                 html.Span("SW version: " + fh.sw_version, style={'marginRight': '20px', 'fontSize': '16px', 'color': '#555'})
             ]
         ),
@@ -61,14 +57,27 @@ app.layout = html.Div(
                     "cursor": "pointer"
                 }
             )
-        ], style={"display": "flex", "justifyContent": "flex-start", "padding":"10px"}),  # Flex container for right alignment
+        ], style={"display": "flex", "justifyContent": "flex-start", "padding":"10px", "marginLeft":"60px"}),  # Flex container for right alignment
         
         # html.Button("Select data file", id='file-button', style={'marginLeft': '20px'}),
         
         dcc.Graph(id='plot', figure=func.display_figure(df, plot_title), config=plot_config, style={"backgroundColor": func.bg_colour}),
-        html.Button("Toggle inflation phases", id='inflation_button', style={'marginLeft': '20px'}, n_clicks=0),
+        html.Button("Inflation phases", id='inflation_button', style={'marginLeft': '60px'}, n_clicks=0),
+        html.Button("Alarms", id='alarm_button', style={'marginLeft': '60px'}, n_clicks=0),
+        html.Button("UI messages", id='ui_button', style={'marginLeft': '60px'}, n_clicks=0),
+        html.Button("Catheter", id='wire_button', style={'marginLeft': '60px'}, n_clicks=0),
         
-        html.H2("Statistics", style={'marginTop': '20px', 'marginLeft': '20px'}),
+        dcc.Store(id='inf-phases-store', data={
+            "inflation": func.measure_time(df, 50, 80),
+            "deflation": func.measure_time(df, 100, 30),
+            "pause": func.measure_duration(df, 120)
+        }),
+        
+        dcc.Store(id='alarms-store', data=func.measure_text_duration(df, column="Alarm")),
+        dcc.Store(id='ui-store', data=func.measure_text_duration(df, column="UI")),
+        dcc.Store(id='wire-store', data=func.measure_text_duration(df, column="Wire")),
+        
+        html.H2("Statistics", style={'marginTop': '20px', 'marginLeft': '60px'}),
         
         dcc.Dropdown(
             id='stat_selector',

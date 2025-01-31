@@ -41,28 +41,49 @@ def register_callbacks(app, df, plot_title):
 
     # Callback to toggle inflation phases
     @app.callback(
-        Output('plot', 'figure'),
-        Input('inflation_button', 'n_clicks'),
-        prevent_initial_call=True
+    Output('plot', 'figure'),
+    Input('inflation_button', 'n_clicks'),
+    Input('alarm_button', 'n_clicks'),
+    Input('ui_button', 'n_clicks'),
+    Input('wire_button', 'n_clicks'),
+    State('inf-phases-store', 'data'),
+    State('alarms-store', 'data'),
+    State('ui-store', 'data'),
+    State('wire-store', 'data'),
+    prevent_initial_call=True
     )
-    def toggle_phases(clicks):
-        
-        visibility = clicks % 2
-        fig = func.display_figure(df, plot_title)
-        
-        if visibility:
-            inflation_times = func.measure_time(df, 50, 80)
-            deflation_times = func.measure_time(df, 100, 30)
-            pause_times = func.measure_duration(df, 120)
+    def update_plot(inf_clicks, alarm_clicks, ui_clicks, wire_clicks, phases, alarms, uis, wires):
             
-            # Highlight plot areas
-            for event in inflation_times:
-                func.highlight_area(fig, event['start_time'], event['end_time'], color="darkred", label="inflation")
-            for event in deflation_times:
-                func.highlight_area(fig, event['start_time'], event['end_time'], color="darkblue", label="deflation")
-            for event in pause_times:
-                func.highlight_area(fig, event['start_time'], event['end_time'], color="gray", label="pause")
-                
+        fig = func.display_figure(df, plot_title)  # Default figure
+    
+        # Handle inflation button
+        visibility_inf = bool(inf_clicks % 2)    
+        if visibility_inf:
+            for event in phases["inflation"]:
+                func.highlight_area(fig, event['start_time'], event['end_time'], color="darkred", label="inflation", visibility=visibility_inf)
+            for event in phases["deflation"]:
+                func.highlight_area(fig, event['start_time'], event['end_time'], color="darkblue", label="deflation", visibility=visibility_inf)
+            for event in phases["pause"]:
+                func.highlight_area(fig, event['start_time'], event['end_time'], color="gray", label="pause", visibility=visibility_inf)
+    
+        # Handle Alarm button
+        visibility_alarm = bool(alarm_clicks % 2)
+        if visibility_alarm:
+            for event in alarms:
+                func.show_alarms(fig, event['start'], event['end'], color="yellow", label=event['alarm'], visibility=visibility_alarm)
+            
+        # Handle UI button
+        visibility_ui = bool(ui_clicks % 2)
+        if visibility_ui:
+            for event in uis:
+                func.show_alarms(fig, event['start'], event['end'], color="lightblue", label=event['alarm'], visibility=visibility_ui)
+            
+        # Handle Catheter button
+        visibility_wire = bool(wire_clicks % 2)
+        if visibility_wire:
+            for event in wires:
+                func.show_alarms(fig, event['start'], event['end'], color="deeppink", label=event['alarm'], visibility=visibility_wire)
+            
         return fig
 
     # Callback to update the zoom range

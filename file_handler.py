@@ -13,11 +13,12 @@ from tkinter.filedialog import askopenfilename
 import os
 import re
 import csv
+import numpy as np
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
 fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded only)
-sw_version = "2025_01_23__1"
+sw_version = "2025_01_17__1"
 bsn, tsn = None, None     #Balloon and Tip sensitivity values
 
 def export_metadata(metadata, filename):
@@ -30,14 +31,18 @@ def export_metadata(metadata, filename):
         print(f"Metadata successfully exported to {filename}")
     except Exception as e:
         print(f"An error occurred: {e}")
-
+        
 def read_raw_data(file_path):
         
+    print("Processing the data file...")
     datalines = []
     header = []
     sections = []
     metadata = []
     
+    alarm = ""
+    ui = ""
+    wire = ""
     catheterID = None
     
     # Add SW version
@@ -75,6 +80,18 @@ def read_raw_data(file_path):
             if line.startswith("1-Wire: First connection of catheter") and not catheterID:
                 catheterID = re.search(r"1-Wire: First connection of catheter (.+)", line).group(1).strip()
                 metadata.append("Catheter ID:\t\t\t\t" + catheterID)
+                message = line.split(":")[1].strip()
+                wire = message 
+                
+            # Extract alarms and UI messages. SD-card messages are not needed
+            elif line.startswith("Alarm:"):
+                alarm = line  
+            elif line.startswith("UI:"):
+                message = line.split(":")[1].split(",")  # Get variables after ':'
+                ui = message[0].strip("'") + ", " + message[1].strip("'")
+            elif line.startswith("1-Wire:"):
+                message = line.split(":")[1].strip()
+                wire = message 
             
             
             #------------------------------------ Read data lines ----------------------------------------------------"
@@ -89,7 +106,7 @@ def read_raw_data(file_path):
                     
                     # If no header has been read yet, read the header line
                     if not header:
-                        header = row
+                        header = row + ["Alarm", "UI", "Wire"]
                         
                     # If header is already read, close the current section
                     else:
@@ -100,6 +117,11 @@ def read_raw_data(file_path):
                         
                 # If "Index" is numerical then append data to current section
                 else:
+                    # If the previous row contained an alarm, it will be attached to the next line's comment
+                    row += [alarm if alarm else ""]
+                    row += [ui if ui else ""]
+                    row += [wire if wire else ""]
+                    alarm = ui = wire = ""
                     datalines.append(row)  
         
         # Close the last section
@@ -187,11 +209,19 @@ def convert_data(df, advanced_mode=False):
     # Remove whitespace characters
     df.columns = df.columns.str.strip()
     
-    # Extract sensitivity values
+    # Scale time axis
+    df = df.rename_axis("Time")
+    df.index = df.index / fs_index
+    
+    # Extract non-numerical values
     bsn, tsn = extract_sensitivity(df["Comment"])
+    comments = df['Comment'][df['Comment'].notna() & (df['Comment'].str.strip() != '')]
+    alarms = df['Alarm'][df['Alarm'].notna() & (df['Alarm'].str.strip() != '')]
+    ui = df['UI'][df['UI'].notna() & (df['UI'].str.strip() != '')]
+    wire = df['Wire'][df['Wire'].notna() & (df['Wire'].str.strip() != '')]
     
     # Remove unused variables
-    df.drop(['Comment', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR', 'Raw0', 'Raw1', 'BattRaw', 'VrefintRaw'], 
+    df.drop(['Comment', 'Alarm', 'UI', 'Wire', 'TipComp', 'BalloonComp', 'TipJOFR', 'BalloonJOFR', 'Raw0', 'Raw1', 'BattRaw', 'VrefintRaw'], 
             axis=1, inplace=True)
     
     # Drop advanced variables
@@ -228,34 +258,24 @@ def convert_data(df, advanced_mode=False):
     df = df.apply(pd.to_numeric, errors='coerce')
     df.dropna(inplace=True, axis=0)  
     
-    df = df.rename_axis("Time")
-    df.index = df.index / fs_index
-    
     df["Fast0"] = raw_to_mmHg(df["Fast0"], sensitivity=tsn)
     df["Slow0"] = raw_to_mmHg(df["Slow0"], sensitivity=tsn)
-    
     df["Fast1"] = raw_to_mmHg(df["Fast1"], sensitivity=bsn)
     df["Slow1"] = raw_to_mmHg(df["Slow1"], sensitivity=bsn)
-    
     df["Systolic"] = df["Systolic"].astype(float) / 10
     df["Diastolic"] = df["Diastolic"].astype(float) / 10
     df["MAP"] = (df["Systolic"] + 2 * df["Diastolic"]) / 3.0
-    
     df["Pulse BPM"] = pulse_bpm(df)
-    
     df["Inflate"] = df['Buttons'].apply(lambda x: (int(x) & 0x03) * 100)
     df["Deflate"] = df['Buttons'].apply(lambda x: ((int(x) & 0x0C) >> 2) * 100)
     df["Alarm Ack"] = df['Buttons'].apply(lambda x: ((int(x) & 0x30) >> 4) * 100)
     df["State"] = df["State"].astype(float) * 10
-                                     
     df["MotorPos"] = df["MotorPos"].astype(float) / 1000              
     df["PW HallA"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 2) & 0x01) * 10 - 32)
     df["PW HallB"] =  df["PumpWheel"].apply(lambda x: ((int(x) >> 3) & 0x01) * 10 - 33)
-                        
     df["BattFast"] = (df["BattFast"].astype(float) * 100) / 4095
     df["BattSlow"] = (df["BattSlow"].astype(float) * 100) / 4095                       
     
-
     # Decode variable names
     df.rename(columns={'Fast0': 'Tip, fast',
                        'Slow0': 'Tip, slow',
@@ -263,14 +283,22 @@ def convert_data(df, advanced_mode=False):
                        'Slow1': 'Balloon, slow'
                        }, inplace=True)
     
-    
     # Drop unused variables
     df.drop(['PumpWheel', 'Buttons', 'BVDebug', 'BPDiff', 'BPUpdate'], 
             axis=1, inplace=True)
-    #TODO: Comments, alarms
     
     # Convert all columns to int
     df = df.apply(lambda col: col.astype(int) if col.name != df.index.name else col)
+    
+    # Add non-numerical columns
+    df["Comments"] = comments
+    df['Comments'] = df['Comments'].fillna(np.nan)
+    df["Alarm"] = alarms
+    df['Alarm'] = df['Alarm'].fillna(np.nan)
+    df["UI"] = ui
+    df['UI'] = df['UI'].fillna(np.nan)
+    df["Wire"] = wire
+    df['Wire'] = df['Wire'].fillna(np.nan)
     
     print("Units are converted successfully")
     return df
@@ -294,8 +322,7 @@ def find_file():
     except FileNotFoundError():
         print("File not found")
         return None
-    
-    
+       
 def open_datafile():
     
     # Prompt user for data file
@@ -350,9 +377,7 @@ def check_version(meta_path, expected_version):
         else:
             print("ERROR: SW version not found in the file.")
             return False
-    
-
-    
+       
 def preprocess_file(file_path=None, export=False):
     
     # Import and clean data
