@@ -291,6 +291,10 @@ def measure_text_duration(df, column="Alarm", max_gap=3):
     active_alarm = None
     start_idx = None
     prev_idx = None  # Track previous index
+    
+    if column not in df:
+        print(f"There are no {column} found in this file.")
+        return []
 
     for i, value in df[column].dropna().items():
         
