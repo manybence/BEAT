@@ -12,7 +12,7 @@ from BEAT import file_handler as fh
 
 @pytest.fixture
 def load_data():
-    test_file = "test\ValidationFile\SOF-0002687.txt"
+    test_file = r"test\ValidationFile\SOF-0002687.txt"
     file_path = fh.open_datafile(test_file)
     df_num, df_text = fh.read_preproc_data(file_path)
     return df_num, df_text
@@ -78,12 +78,25 @@ def test_hall(load_data):
     time_start = 80
     time_end = 160
 
-    # Confirm "PW HallA" and "PW HallB" leading each other in the correct order
-    hall_a = df_num.loc[time_start:time_end, "PW HallA"]
-    hall_b = df_num.loc[time_start:time_end, "PW HallB"]
-    # assert expected_tip_fast == tip_fast, f"FAIL: {variable} is incorrect: {tip_fast}"
-    # print(f"PASS: {variable} is correct")
-    assert False
+    # Extract Hall sensor signals during inflation. Remove offset
+    hall_a_inf = df_num.loc[time_start:time_start+30, "PW HallA"].values + 22
+    hall_b_inf = df_num.loc[time_start:time_start+30, "PW HallB"].values + 23
+    
+    # Confirm Hall B is leading Hall A during inflation
+    for i in range(1, len(hall_b_inf)):
+        if hall_b_inf[i] < hall_b_inf[i-1]:     # Hall B activation point
+            assert hall_a_inf[i] == 0, "FAIL: Hall B is not leading Hall A during inflation."
+    print("PASS: Hall B is leading Hall A during inflation.")
+            
+    # Extract Hall sensor signals during deflation. Remove offset
+    hall_a_defl = df_num.loc[time_end-10:time_end, "PW HallA"].values + 22
+    hall_b_defl = df_num.loc[time_end-10:time_end, "PW HallB"].values + 23
+    
+    # Confirm Hall A is leading Hall B during inflation
+    for i in range(1, len(hall_a_defl)):
+        if hall_a_defl[i] < hall_a_defl[i-1]:     # Hall A activation point
+            assert hall_b_defl[i] == 0, "FAIL: Hall A is not leading Hall B during deflation."
+    print("PASS: Hall A is leading Hall B during deflation.")
     
 def test_state(load_data):
     # Load data
@@ -114,28 +127,28 @@ def test_pressure(load_data):
     expected_tip_fast = 200
     tip_fast = df_num.loc[time, variable]
     assert expected_tip_fast == tip_fast, f"FAIL: {variable} is incorrect: {tip_fast}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {tip_fast}")
     
     # Confirm "Tip, slow" pressure matches the expected value
     variable = "Tip, slow"
     expected_tip_slow = 200
     tip_slow = df_num.loc[time, variable]
     assert expected_tip_slow == tip_slow, f"FAIL: {variable} is incorrect: {tip_slow}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {tip_slow}")
     
     # Confirm "Balloon, fast" pressure matches the expected value
     variable = "Balloon, fast"
     expected_balloon_fast = 199
     balloon_fast = df_num.loc[time, variable]
     assert expected_balloon_fast == balloon_fast, f"FAIL: {variable} is incorrect: {balloon_fast}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {balloon_fast}")
     
     # Confirm "Balloon, slow" pressure matches the expected value
     variable = "Balloon, slow"
     expected_balloon_slow = 199
     balloon_slow = df_num.loc[time, variable]
     assert expected_balloon_slow == balloon_slow, f"FAIL: {variable} is incorrect: {balloon_slow}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {balloon_slow}")
 
 def test_syst_dias_stat(load_data):
     # Load data
@@ -147,14 +160,14 @@ def test_syst_dias_stat(load_data):
     expected_systolic = 200
     systolic = df_num.loc[time, variable]
     assert expected_systolic == systolic, f"FAIL: {variable} is incorrect: {systolic}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {systolic}")
     
     # Confirm "Diastolic" pressure matches the expected value
     variable = "Diastolic"
     expected_diastolic = 200
     diastolic = df_num.loc[time, variable]
     assert expected_diastolic == diastolic, f"FAIL: {variable} is incorrect: {diastolic}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {diastolic}")
     
 def test_syst_dias_dyn(load_data):
     # Load data
@@ -166,14 +179,14 @@ def test_syst_dias_dyn(load_data):
     expected_systolic = 66
     systolic = df_num.loc[time, variable]
     assert expected_systolic == systolic, f"FAIL: {variable} pressure is incorrect: {systolic}"
-    print(f"PASS: {variable} pressure is correct")
+    print(f"PASS: {variable} pressure is correct: {systolic}")
     
     # Confirm "Diastolic" pressure matches the expected value
     variable = "Diastolic"
     expected_diastolic = 0
     diastolic = df_num.loc[time, "Diastolic"]
     assert expected_diastolic == diastolic, f"FAIL: {variable} pressure is incorrect: {diastolic}"
-    print(f"PASS: {variable} pressure is correct")
+    print(f"PASS: {variable} pressure is correct: {diastolic}")
     
 def test_mean_art_press(load_data):
     # Load data
@@ -185,7 +198,7 @@ def test_mean_art_press(load_data):
     expected_value = [21, 22]
     value = df_num.loc[time, variable]
     assert value in expected_value, f"FAIL: {variable} is incorrect: {value}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {value}")
     
 def test_pulse_bpm(load_data):
     # Load data
@@ -197,7 +210,7 @@ def test_pulse_bpm(load_data):
     expected_value = 87
     value = df_num.loc[time, variable]
     assert value == expected_value, f"FAIL: {variable} is incorrect: {value}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {value}")
 
 def test_battery(load_data):
     # Load data
@@ -209,13 +222,13 @@ def test_battery(load_data):
     expected_value = 86
     value = df_num.loc[time, variable]
     assert value == expected_value, f"FAIL: {variable} is incorrect: {value}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {value}")
     
     # Confirm "BattFast" matches the expected value
     variable = "BattFast"
     value = df_num.loc[time, variable]
     assert value == expected_value, f"FAIL: {variable} is incorrect: {value}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {value}")
     
 def test_battery_percent(load_data):
     # Load data
@@ -227,7 +240,7 @@ def test_battery_percent(load_data):
     expected_value = 100
     value = df_num.loc[time, variable]
     assert value == expected_value, f"FAIL: {variable} is incorrect: {value}"
-    print(f"PASS: {variable} is correct")
+    print(f"PASS: {variable} is correct: {value}")
     
 def test_alarm(load_data):
     # Load data
@@ -249,9 +262,10 @@ def test_time_scale(load_data):
     expected_value = (600, 601)
     value = df_num.index.max()
     assert (value < max(expected_value)) and (value > min(expected_value)), f"FAIL: Time scale is incorrect: max = {value}"
-    print(f"PASS: Time scale is correct")
+    print(f"PASS: Time scale is correct: max = {value}")
     
     # Confirm the time scale matches the expected value
     value = df_text.index.max()
     assert (value < max(expected_value)) and (value > min(expected_value)), f"FAIL: Time scale is incorrect: max = {value}"
-    print(f"PASS: Time scale is correct")
+    print(f"PASS: Time scale is correct: max = {value}")
+

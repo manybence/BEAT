@@ -13,12 +13,11 @@ from tkinter.filedialog import askopenfilename
 import os
 import re
 import csv
-import numpy as np
 
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
 fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded only)
-sw_version = "2025_01_17__1"
+sw_version = "2025_01_17__3"   # Update the main version when data reading or conversion is updated.
 bsn, tsn = None, None     #Balloon and Tip sensitivity values
 
 def export_metadata(metadata, filename):
