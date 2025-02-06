@@ -18,7 +18,7 @@ import numpy as np
 prev_battery = 100  # Battery charge %
 fs = 200    # 200 Hz sampling frequency
 fs_index = 50   # 50 Hz sampling freq per index (as every 4th sample is recorded only)
-sw_version = "2025_01_17__2"
+sw_version = "2025_01_17__1"
 bsn, tsn = None, None     #Balloon and Tip sensitivity values
 
 def export_metadata(metadata, filename):
@@ -317,10 +317,10 @@ def find_file():
         print("File not found")
         return None
        
-def open_datafile():
+def open_datafile(file_path=None):
     
     # Prompt user for data file
-    file_path = find_file()
+    if not file_path: file_path = find_file()
     file_dir, file_name = os.path.split(file_path)
     file_base, file_ext = os.path.splitext(file_name)
     
